@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.config import settings
 from app.db.session import session_scope
-from app.db.models import Session as SessionModel, Event as EventModel
+from app.db.models import Session as SessionModel, Event as EventModel, PullRequest as PullRequestModel
 from app.ingestion.daemon_client import DaemonClient, DaemonClientError
 from app.ingestion.event_normalizer import normalize_any
 from app.ingestion.event_bus import event_bus
@@ -94,12 +94,21 @@ class DaemonPoller:
 
     async def _process_raw(self, raw: dict) -> None:
         """
-        Normalize, persist (Event + upsert Session snapshot), and publish.
+        Normalize, persist (Event + upsert Session/PR snapshots), and publish.
         """
         normalized = normalize_any(raw)
+        table = normalized.get("table")
 
         # Persist
         with session_scope() as db:
+            # Handle pull_requests table: upsert PullRequest row
+            if table == "pull_requests":
+                self._upsert_pull_request(db, normalized)
+            # Handle pr_checks: try to resolve session_id via PullRequest
+            elif table == "pr_checks":
+                self._resolve_pr_check_session_id(db, normalized)
+
+            # Always upsert session snapshot if present
             self._upsert_session(db, normalized)
             self._insert_event(db, normalized)
 
@@ -150,6 +159,37 @@ class DaemonPoller:
             ) or __import__("datetime").datetime.utcnow(),
         )
         db.add(event)
+
+    # ------------------------------------------------------------------ PR helpers
+    def _upsert_pull_request(self, db, norm: dict) -> None:
+        """Insert or update PullRequest from normalized pull_requests CDC event."""
+        payload = norm.get("payload", {})
+        pr_id = payload.get("id")
+        if not pr_id:
+            return
+        pr = db.get(PullRequestModel, pr_id)
+        if pr is None:
+            pr = PullRequestModel(id=pr_id)
+            db.add(pr)
+        pr.session_id = payload.get("session_id") or pr.session_id
+        pr.pr_number = payload.get("number") or pr.pr_number
+        pr.repo = payload.get("repo") or pr.repo
+        pr.title = payload.get("title") or pr.title
+        pr.state = payload.get("state") or pr.state
+        # risk_level left for later
+
+    def _resolve_pr_check_session_id(self, db, norm: dict) -> None:
+        """If pr_check event has pr_id in payload, look up PullRequest to set session_id."""
+        payload = norm.get("payload", {})
+        pr_id = payload.get("pr_id") or payload.get("pull_request_id")
+        if not pr_id:
+            return
+        pr = db.get(PullRequestModel, pr_id)
+        if pr and pr.session_id:
+            norm["session_id"] = pr.session_id
+        else:
+            # Parent PR not yet persisted; log and leave session_id as None
+            logger.debug("PullRequest %s not found for pr_check, session_id unavailable", pr_id)
 
 
 # Singleton instance

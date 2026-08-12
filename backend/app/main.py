@@ -4,11 +4,13 @@ from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.session import init_db, get_db
+from app.db.session import init_db, get_db, SessionLocal
 from app.db.models import Event as EventModel
 from app.ingestion.daemon_poller import poller
 from app.attention_router.queue_service import start_queue_service
 from app.attention_router.router import router as attention_router
+from app.policy_gate.router import router as policy_gate
+from app.policy_gate.default_policies import seed_default_rules
 
 
 app = FastAPI(
@@ -31,6 +33,12 @@ async def on_startup() -> None:
     init_db()
     await poller.start()
     await start_queue_service()
+    # seed default policy rules
+    db = SessionLocal()
+    try:
+        seed_default_rules(db)
+    finally:
+        db.close()
 
 
 @app.on_event("shutdown")
@@ -67,6 +75,7 @@ def recent_events(db: Session = Depends(get_db), limit: int = 10):
 
 # Router mounts
 app.include_router(attention_router, prefix="/api/v1", tags=["attention"])
+app.include_router(policy_gate, prefix="/api/v1", tags=["policy"])
 
 # Router mounts — imported as no-ops for now since module logic not yet implemented
 # TODO: uncomment and implement routers after CTO planning review

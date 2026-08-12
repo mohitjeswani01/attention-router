@@ -55,13 +55,7 @@ def normalize_event(raw_event: Dict[str, Any]) -> Dict[str, Any]:
         session_id = new_data.get("session_id") or old_data.get("session_id")
     elif table == "pr_checks":
         event_type = f"pr_check.{operation.lower()}"
-        # pr_checks rows reference a pull_request via pr_id. To get the session_id we would
-        # need to join to pull_requests (which has session_id). Since we don't persist
-        # pull_requests locally yet and the AO daemon doesn't expose a direct PR lookup
-        # endpoint in the documented API, we cannot reliably resolve session_id here.
-        # TODO: When pull_requests table is added to our schema, resolve session_id via
-        # a DB join (pr_id -> pull_requests.session_id) or by calling the AO daemon if
-        # an endpoint becomes available.
+        # session_id will be resolved later in daemon_poller by looking up the PullRequest row via pr_id
         session_id = None
     else:
         event_type = f"{table}.{operation.lower()}"

@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, JSON, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, JSON, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -43,3 +43,19 @@ class Event(Base):
     received_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
     session = relationship("Session", back_populates="events")
+
+
+class PullRequest(Base):
+    __tablename__ = "pull_requests"
+
+    id = Column(UUID(as_uuid=False), primary_key=True)
+    session_id = Column(UUID(as_uuid=False), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    pr_number = Column(Integer, nullable=False)
+    repo = Column(String, nullable=False)
+    title = Column(String, nullable=True)
+    state = Column(String, nullable=False)  # open, merged, closed
+    risk_level = Column(String, nullable=True)  # for merge_digest later
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    session = relationship("Session")

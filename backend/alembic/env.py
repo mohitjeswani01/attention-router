@@ -11,8 +11,9 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings
 from app.db.base import Base
-from app.db.models import Session, Event  # noqa: F401 - needed for metadata
+from app.db.models import Session, Event, PullRequest  # noqa: F401 - needed for metadata
 from app.attention_router.models import AttentionItem  # noqa: F401
+from app.policy_gate.models import PolicyRule, ApprovalDecision  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config
