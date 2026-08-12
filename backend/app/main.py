@@ -7,6 +7,8 @@ from app.config import settings
 from app.db.session import init_db, get_db
 from app.db.models import Event as EventModel
 from app.ingestion.daemon_poller import poller
+from app.attention_router.queue_service import start_queue_service
+from app.attention_router.router import router as attention_router
 
 
 app = FastAPI(
@@ -28,6 +30,7 @@ app.add_middleware(
 async def on_startup() -> None:
     init_db()
     await poller.start()
+    await start_queue_service()
 
 
 @app.on_event("shutdown")
@@ -62,11 +65,12 @@ def recent_events(db: Session = Depends(get_db), limit: int = 10):
     ]
 
 
+# Router mounts
+app.include_router(attention_router, prefix="/api/v1", tags=["attention"])
+
 # Router mounts — imported as no-ops for now since module logic not yet implemented
 # TODO: uncomment and implement routers after CTO planning review
-# from app.attention_router.router import router as attention_router
 # from app.policy_gate.router import router as policy_gate
 # from app.merge_digest.router import router as merge_digest
-# app.include_router(attention_router, prefix="/api/v1/attention", tags=["attention"])
 # app.include_router(policy_gate, prefix="/api/v1/policy", tags=["policy"])
 # app.include_router(merge_digest, prefix="/api/v1/merge", tags=["merge"])
