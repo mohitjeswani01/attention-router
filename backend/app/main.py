@@ -1,8 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select, desc
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.session import init_db
+from app.db.session import init_db, get_db
+from app.db.models import Event as EventModel
+from app.ingestion.daemon_poller import poller
 
 
 app = FastAPI(
@@ -21,8 +25,14 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def on_startup() -> None:
+async def on_startup() -> None:
     init_db()
+    await poller.start()
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    await poller.stop()
 
 
 @app.get("/healthz")
@@ -33,6 +43,23 @@ def healthz() -> dict:
 @app.get("/readyz")
 def readyz() -> dict:
     return {"status": "ready"}
+
+
+# Temporary debug endpoint — remove before production
+@app.get("/debug/recent-events")
+def recent_events(db: Session = Depends(get_db), limit: int = 10):
+    stmt = select(EventModel).order_by(desc(EventModel.received_at)).limit(limit)
+    events = db.execute(stmt).scalars().all()
+    return [
+        {
+            "id": e.id,
+            "session_id": e.session_id,
+            "event_type": e.event_type,
+            "received_at": e.received_at.isoformat() + "Z",
+            "normalized_payload": e.normalized_payload,
+        }
+        for e in events
+    ]
 
 
 # Router mounts — imported as no-ops for now since module logic not yet implemented
