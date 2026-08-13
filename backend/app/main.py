@@ -11,6 +11,7 @@ from app.attention_router.queue_service import start_queue_service
 from app.attention_router.router import router as attention_router
 from app.policy_gate.router import router as policy_gate
 from app.policy_gate.default_policies import seed_default_rules
+from app.merge_digest.router import router as merge_digest
 
 
 app = FastAPI(
@@ -76,6 +77,7 @@ def recent_events(db: Session = Depends(get_db), limit: int = 10):
 # Router mounts
 app.include_router(attention_router, prefix="/api/v1", tags=["attention"])
 app.include_router(policy_gate, prefix="/api/v1", tags=["policy"])
+app.include_router(merge_digest, prefix="/api/v1", tags=["merge_digest"])
 
 # Router mounts — imported as no-ops for now since module logic not yet implemented
 # TODO: uncomment and implement routers after CTO planning review

@@ -14,6 +14,7 @@ from app.db.base import Base
 from app.db.models import Session, Event, PullRequest  # noqa: F401 - needed for metadata
 from app.attention_router.models import AttentionItem  # noqa: F401
 from app.policy_gate.models import PolicyRule, ApprovalDecision  # noqa: F401
+from app.merge_digest.models import DigestEntry  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config
