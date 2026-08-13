@@ -5,6 +5,8 @@
 
 The intelligence and decision layer built for [Agent Orchestrator (AO)](https://github.com/Untrivial-ai/agent-orchestrator). Attention Router transforms unstructured event streams from multi-agent coding sessions into a ranked urgency queue, a deterministic policy gate for automated approvals, and an executive merge readiness briefing.
 
+check the video here [Attention Router (AR)](https://www.youtube.com/watch?v=gQDHahWlFDw)
+
 ---
 
 ## The Gap
