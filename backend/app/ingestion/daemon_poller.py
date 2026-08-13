@@ -98,6 +98,7 @@ class DaemonPoller:
         """
         normalized = normalize_any(raw)
         table = normalized.get("table")
+        source = normalized.get("source")
 
         # Persist
         with session_scope() as db:
@@ -108,9 +109,15 @@ class DaemonPoller:
             elif table == "pr_checks":
                 self._resolve_pr_check_session_id(db, normalized)
 
-            # Always upsert session snapshot if present
-            self._upsert_session(db, normalized)
-            self._insert_event(db, normalized)
+            # Upsert session only for session snapshots
+            if source == "session_snapshot":
+                self._upsert_session(db, normalized)
+
+            # Only insert Event if we have a valid session_id (FK requirement)
+            if normalized.get("session_id"):
+                self._insert_event(db, normalized)
+            else:
+                logger.debug("Skipping event insert due to missing session_id: %s", normalized.get("event_type"))
 
         # Publish for downstream modules
         event_bus.publish(normalized)

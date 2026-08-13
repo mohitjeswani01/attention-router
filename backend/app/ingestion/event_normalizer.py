@@ -14,8 +14,10 @@ def normalize_session(raw: Dict[str, Any]) -> Dict[str, Any]:
     Convert a raw AO session object (from list_sessions or get_session) into the
     normalized payload we store in `Event.normalized_payload` for session snapshots.
     """
+    session_id = raw.get("id")
     return {
-        "id": raw.get("id"),
+        "id": session_id,
+        "session_id": session_id,
         "project_id": raw.get("project_id"),
         "agent_type": raw.get("harness") or raw.get("agent_type"),
         "activity_state": raw.get("activity_state"),
