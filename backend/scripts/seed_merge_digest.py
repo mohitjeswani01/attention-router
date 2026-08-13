@@ -11,9 +11,17 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal, init_db
 from app.db.models import Session as SessionModel, PullRequest as PRModel, Event as EventModel
+from app.merge_digest.models import DigestEntry
 
 # Known fake PR numbers for idempotent seeding
 FAKE_PR_NUMBERS = [101, 102, 103]
+
+FAKE_SESSION_IDS = [
+    "a1b2c3d4-1111-4222-8333-000000000001",  # idle -> ready_to_merge
+    "b2c3d4e5-2222-4333-8444-000000000002",  # exited -> needs_review
+    "c3d4e5f6-3333-4444-8555-000000000003",  # waiting_input -> in_progress
+    "d4e5f6a7-4444-4555-8666-000000000004",  # active -> in_progress
+]
 
 
 def seed():
@@ -24,18 +32,14 @@ def seed():
         for pr_num in FAKE_PR_NUMBERS:
             existing_pr = db.query(PRModel).filter(PRModel.pr_number == pr_num).first()
             if existing_pr:
+                db.query(DigestEntry).filter(DigestEntry.pr_id == existing_pr.id).delete(synchronize_session=False)
                 db.query(EventModel).filter(EventModel.session_id == existing_pr.session_id).delete(synchronize_session=False)
                 db.query(PRModel).filter(PRModel.id == existing_pr.id).delete(synchronize_session=False)
         db.commit()
 
         # Get our known sessions
         sessions = {}
-        for sid in [
-            "00000000-0000-0000-0000-000000000001",  # idle -> ready_to_merge
-            "00000000-0000-0000-0000-000000000002",  # exited -> needs_review
-            "00000000-0000-0000-0000-000000000003",  # waiting_input -> in_progress
-            "00000000-0000-0000-0000-000000000004",  # active -> in_progress
-        ]:
+        for sid in FAKE_SESSION_IDS:
             sess = db.query(SessionModel).filter(SessionModel.id == sid).first()
             if sess:
                 sessions[sess.id] = sess
@@ -43,12 +47,11 @@ def seed():
         if len(sessions) < 3:
             raise RuntimeError("Need at least 3 sessions; run seed_fake_sessions.py first")
 
-        sess_list = list(sessions.values())
         now = datetime.utcnow()
 
         pr_data = [
             {
-                "session": sess_list[0],  # IDLE session -> ready_to_merge (low risk)
+                "session": sessions[FAKE_SESSION_IDS[0]],  # IDLE session -> ready_to_merge (low risk)
                 "pr_number": 101,
                 "repo": "myorg/docs-repo",
                 "title": "Update README",
@@ -58,7 +61,7 @@ def seed():
                 "updated_at": now - timedelta(hours=2),  # recent
             },
             {
-                "session": sess_list[2],  # WAITING_INPUT session -> in_progress
+                "session": sessions[FAKE_SESSION_IDS[2]],  # WAITING_INPUT session -> in_progress
                 "pr_number": 102,
                 "repo": "myorg/app",
                 "title": "Update Dockerfile",
@@ -68,7 +71,7 @@ def seed():
                 "updated_at": now - timedelta(days=1),
             },
             {
-                "session": sess_list[1],  # EXITED session, stale + sensitive -> needs_review
+                "session": sessions[FAKE_SESSION_IDS[1]],  # EXITED session, stale + sensitive -> needs_review
                 "pr_number": 103,
                 "repo": "myorg/legacy",
                 "title": "Refactor auth module",
@@ -87,7 +90,7 @@ def seed():
                 pr_number=data["pr_number"],
                 repo=data["repo"],
                 title=data["title"],
-                state=data["state"],
+                state="open",
                 created_at=data["updated_at"],
                 updated_at=data["updated_at"],
             )

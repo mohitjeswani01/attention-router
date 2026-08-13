@@ -12,22 +12,22 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal, init_db
 from app.db.models import Session as SessionModel, PullRequest, Event
-from app.policy_gate.models import PolicyRule
+from app.policy_gate.models import PolicyRule, ApprovalDecision, PolicyAction
+from app.attention_router.models import AttentionItem
 from app.merge_digest.models import DigestEntry
 from app.attention_router.scoring import compute_urgency
 from app.attention_router.queue_service import _recompute_and_upsert
 from app.policy_gate.rules_engine import evaluate_command, evaluate_file_paths, decide_action
-from app.policy_gate.models import PolicyAction
 from app.policy_gate.default_policies import seed_default_rules
 from app.merge_digest.digest_builder import build_digest
 from app.merge_digest.risk_scoring import compute_risk
 
 
 FAKE_SESSION_IDS = [
-    "00000000-0000-0000-0000-000000000001",
-    "00000000-0000-0000-0000-000000000002",
-    "00000000-0000-0000-0000-000000000003",
-    "00000000-0000-0000-0000-000000000004",
+    "a1b2c3d4-1111-4222-8333-000000000001",
+    "b2c3d4e5-2222-4333-8444-000000000002",
+    "c3d4e5f6-3333-4444-8555-000000000003",
+    "d4e5f6a7-4444-4555-8666-000000000004",
 ]
 FAKE_PR_NUMBERS = [101, 102, 103]
 
@@ -35,7 +35,9 @@ FAKE_PR_NUMBERS = [101, 102, 103]
 def clear_all_data(db: Session):
     """Clear all fake/seeded data for a clean slate."""
     # Delete in FK-safe order
+    db.query(AttentionItem).delete(synchronize_session=False)
     db.query(DigestEntry).delete(synchronize_session=False)
+    db.query(ApprovalDecision).delete(synchronize_session=False)
     db.query(Event).filter(Event.session_id.in_(FAKE_SESSION_IDS)).delete(synchronize_session=False)
     db.query(PullRequest).filter(PullRequest.pr_number.in_(FAKE_PR_NUMBERS)).delete(synchronize_session=False)
     db.query(SessionModel).filter(SessionModel.id.in_(FAKE_SESSION_IDS)).delete(synchronize_session=False)
@@ -200,7 +202,7 @@ def seed_prs(db: Session):
 
 
 def seed_policies(db: Session):
-    """Seed default policy rules."""
+    """Seed default policy rules and audit log decisions."""
     seed_default_rules(db)
 
 
@@ -222,12 +224,6 @@ def test_attention_router(db: Session) -> tuple[bool, str]:
             sess_events = [e for e in events if e.session_id == sess.id]
             score, reason, idle_sec = compute_urgency(sess, sess_events)
             results.append((sess.id[:8], sess.activity_state.value, score, reason, idle_sec))
-
-        # Verify expectations:
-        # IDLE session -> idle_on_approval (idle > 30s) or idle
-        # EXITED session -> healthy (0 score, not queued)
-        # WAITING_INPUT -> idle_on_approval
-        # ACTIVE -> working (low score)
 
         idle_sess = next(r for r in results if r[1] == "idle")
         exited_sess = next(r for r in results if r[1] == "exited")
@@ -252,17 +248,14 @@ def test_attention_router(db: Session) -> tuple[bool, str]:
 def test_policy_gate(db: Session) -> tuple[bool, str]:
     """Test Policy Gate module: rules_engine."""
     try:
-        # Test command evaluation
         rule_ls = evaluate_command(db, "ls -la")
         rule_rm = evaluate_command(db, "rm -rf /tmp/test")
         rule_cat = evaluate_command(db, "cat file.txt")
 
-        # Test file path evaluation
         rules_md = evaluate_file_paths(db, ["README.md", "docs/guide.md"])
         rules_docker = evaluate_file_paths(db, ["Dockerfile", "src/main.py"])
         rules_ci = evaluate_file_paths(db, [".github/workflows/ci.yml"])
 
-        # Test decide_action
         action_ls = decide_action([rule_ls]) if rule_ls else None
         action_rm = decide_action([rule_rm]) if rule_rm else None
         action_md = decide_action(rules_md)
@@ -291,7 +284,6 @@ def test_policy_gate(db: Session) -> tuple[bool, str]:
 def test_merge_digest(db: Session) -> tuple[bool, str]:
     """Test Merge Digest module: compute_risk and digest_builder."""
     try:
-        # Test compute_risk on each PR
         prs = db.query(PullRequest).filter(PullRequest.pr_number.in_(FAKE_PR_NUMBERS)).all()
         pr_by_num = {pr.pr_number: pr for pr in prs}
 
@@ -301,13 +293,7 @@ def test_merge_digest(db: Session) -> tuple[bool, str]:
             score, factors = compute_risk(pr, db)
             risk_results[num] = (score, factors)
 
-        # Test build_digest
         digest = build_digest(db)
-
-        # Verify bucket expectations:
-        # PR 101 (docs, recent, small diff, CI success) -> ready_to_merge (low risk)
-        # PR 102 (waiting_input session) -> in_progress (session active)
-        # PR 103 (stale >7d, auth/, config/) -> needs_review (high risk)
 
         checks = [
             len(digest["ready_to_merge"]) >= 1,
@@ -316,7 +302,6 @@ def test_merge_digest(db: Session) -> tuple[bool, str]:
             any(p["pr_number"] == 102 for p in digest["in_progress"]),
             len(digest["needs_review"]) >= 1,
             any(p["pr_number"] == 103 for p in digest["needs_review"]),
-            # Risk scores make sense
             risk_results[101][0] <= 30,  # low risk
             risk_results[103][0] > 30,   # medium/high risk
         ]
@@ -339,32 +324,26 @@ def main():
     db: Session = SessionLocal()
 
     try:
-        # Step 1: Clear all data
         print("\n[1/5] Clearing all seeded data...")
         clear_all_data(db)
         print("    OK")
 
-        # Step 2: Seed sessions
         print("[2/5] Seeding sessions...")
         seed_sessions(db)
         print("    OK")
 
-        # Step 3: Seed PRs
         print("[3/5] Seeding PRs and events...")
         seed_prs(db)
         print("    OK")
 
-        # Step 4: Seed policies
-        print("[4/5] Seeding policy rules...")
+        print("[4/5] Seeding policy rules and decisions...")
         seed_policies(db)
         print("    OK")
 
-        # Step 5: Recompute urgency
         print("[5/5] Recomputing urgency...")
         asyncio.run(recompute_all_urgency(db))
         print("    OK")
 
-        # Run module tests
         print("\n" + "=" * 60)
         print("MODULE TESTS")
         print("=" * 60)
@@ -386,7 +365,6 @@ def main():
         results.append(("Merge Digest", ok, msg))
         print(f"  {msg}")
 
-        # Summary
         print("\n" + "=" * 60)
         print("SUMMARY")
         print("=" * 60)

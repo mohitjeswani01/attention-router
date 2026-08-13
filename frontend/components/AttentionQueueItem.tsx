@@ -55,7 +55,7 @@ export default function AttentionQueueItem({
   onClick,
 }: AttentionQueueItemProps) {
   const style = getReasonStyle(item.reason);
-  const shortId = item.session_id.slice(0, 8);
+  const shortId = (item.session_id || "unknown").slice(0, 8);
 
   return (
     <button

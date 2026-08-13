@@ -1,9 +1,9 @@
 """
-Default policy rules seeded on first run.
+Default policy rules and sample decisions seeded on first run.
 Each rule: (name, condition_type, pattern, action)
 """
-from app.policy_gate.models import PolicyAction
-
+from datetime import datetime, timedelta
+from app.policy_gate.models import PolicyRule, ApprovalDecision, PolicyAction
 
 DEFAULT_RULES = [
     # Auto-approve read‑only commands
@@ -37,10 +37,81 @@ DEFAULT_RULES = [
 
 
 def seed_default_rules(db):
-    """Insert default rules if table empty."""
-    from app.policy_gate.models import PolicyRule
+    """Insert default rules and sample decisions if tables are empty."""
     if db.query(PolicyRule).first() is None:
         for name, ctype, pattern, action in DEFAULT_RULES:
             rule = PolicyRule(name=name, condition_type=ctype, pattern=pattern, action=action, enabled=True)
             db.add(rule)
         db.commit()
+
+    seed_default_decisions(db)
+
+
+def seed_default_decisions(db):
+    """Insert audit log sample decisions if approval_decisions table is empty."""
+    if db.query(ApprovalDecision).first() is not None:
+        return
+
+    # Map rule names to rule IDs
+    rules = {r.name: r.id for r in db.query(PolicyRule).all()}
+    now = datetime.utcnow()
+
+    # Query existing session IDs if present
+    from app.db.models import Session as SessionModel, PullRequest as PRModel
+    sessions = [s.id for s in db.query(SessionModel).all()]
+    prs = {pr.pr_number: pr.id for pr in db.query(PRModel).all()}
+
+    sid1 = sessions[0] if len(sessions) > 0 else "a1b2c3d4-1111-4222-8333-000000000001"
+    sid2 = sessions[2] if len(sessions) > 2 else "c3d4e5f6-3333-4444-8555-000000000003"
+    sid3 = sessions[3] if len(sessions) > 3 else "d4e5f6a7-4444-4555-8666-000000000004"
+
+    decisions = [
+        ApprovalDecision(
+            session_id=sid1,
+            pr_id=prs.get(101),
+            rule_id=rules.get("allow_md_files"),
+            decision="auto_approve",
+            reason="Matched rule 'allow_md_files': doc changes to README.md auto-approved",
+            decided_at=now - timedelta(minutes=15),
+        ),
+        ApprovalDecision(
+            session_id=sid1,
+            pr_id=None,
+            rule_id=rules.get("allow_ls"),
+            decision="auto_approve",
+            reason="Matched rule 'allow_ls': command 'ls -la' auto-approved",
+            decided_at=now - timedelta(minutes=30),
+        ),
+        ApprovalDecision(
+            session_id=sid2,
+            pr_id=prs.get(102),
+            rule_id=rules.get("escalate_dockerfile"),
+            decision="escalate",
+            reason="Matched rule 'escalate_dockerfile': modifications to Dockerfile require human review",
+            decided_at=now - timedelta(minutes=45),
+        ),
+        ApprovalDecision(
+            session_id=sid2,
+            pr_id=None,
+            rule_id=rules.get("escalate_rm_rf"),
+            decision="escalate",
+            reason="Matched rule 'escalate_rm_rf': command 'rm -rf /tmp/build' requires human approval",
+            decided_at=now - timedelta(hours=1, minutes=15),
+        ),
+        ApprovalDecision(
+            session_id=sid3,
+            pr_id=None,
+            rule_id=rules.get("allow_git_status"),
+            decision="auto_approve",
+            reason="Matched rule 'allow_git_status': command 'git status' auto-approved",
+            decided_at=now - timedelta(hours=2),
+        ),
+    ]
+
+    for d in decisions:
+        # Check FK validity: if session_id is not in sessions table, set it to None to avoid FK constraint error
+        if d.session_id and d.session_id not in sessions:
+            d.session_id = None
+        db.add(d)
+
+    db.commit()

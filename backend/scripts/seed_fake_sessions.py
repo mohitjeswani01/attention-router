@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
 """
-Seed script: inserts a few fake Session rows with different activity_states
+Seed script: inserts fake Session rows with different activity_states
 so that the attention queue shows a ranked list without needing the AO daemon.
+Fully idempotent: clears existing seed rows before inserting.
 
 Run from repo root:
     cd backend && python scripts/seed_fake_sessions.py
 """
 
-import uuid
+import asyncio
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.db.session import engine, SessionLocal, init_db
-from app.db.models import Session as SessionModel, ActivityState, PullRequest, Event, DigestEntry
+from app.db.session import SessionLocal, init_db
+from app.db.models import Session as SessionModel, ActivityState, PullRequest, Event
+from app.attention_router.models import AttentionItem
+from app.policy_gate.models import ApprovalDecision, PolicyRule
+from app.merge_digest.models import DigestEntry
+from app.attention_router.queue_service import _recompute_and_upsert
+from app.policy_gate.default_policies import seed_default_rules, seed_default_decisions
 
 
-# Known fake session IDs for idempotent seeding
+# Distinct, realistic fake session IDs (no 00000000 prefixes)
 FAKE_SESSION_IDS = [
-    "00000000-0000-0000-0000-000000000001",  # idle, terminated -> ready_to_merge (low risk)
-    "00000000-0000-0000-0000-000000000002",  # idle, terminated -> needs_review (high risk)
-    "00000000-0000-0000-0000-000000000003",  # waiting_input -> in_progress
-    "00000000-0000-0000-0000-000000000004",  # active -> in_progress
+    "a1b2c3d4-1111-4222-8333-000000000001",  # idle -> low urgency
+    "b2c3d4e5-2222-4333-8444-000000000002",  # exited -> healthy (not queued)
+    "c3d4e5f6-3333-4444-8555-000000000003",  # waiting_input -> idle_on_approval (high urgency)
+    "d4e5f6a7-4444-4555-8666-000000000004",  # active -> working
 ]
 
 
@@ -30,13 +35,13 @@ def seed():
     init_db()
     db: Session = SessionLocal()
     try:
-        # Clear existing fake sessions and their related data for idempotency
-        for sid in FAKE_SESSION_IDS:
-            # Delete in correct order due to FK constraints
-            db.query(DigestEntry).join(PullRequest).filter(PullRequest.session_id == sid).delete(synchronize_session=False)
-            db.query(Event).filter(Event.session_id == sid).delete(synchronize_session=False)
-            db.query(PullRequest).filter(PullRequest.session_id == sid).delete(synchronize_session=False)
-            db.query(SessionModel).filter(SessionModel.id == sid).delete(synchronize_session=False)
+        # 1. Clear existing attention items, digest entries, approval decisions, events, PRs, and sessions
+        db.query(AttentionItem).delete(synchronize_session=False)
+        db.query(DigestEntry).delete(synchronize_session=False)
+        db.query(ApprovalDecision).delete(synchronize_session=False)
+        db.query(Event).filter(Event.session_id.in_(FAKE_SESSION_IDS)).delete(synchronize_session=False)
+        db.query(PullRequest).filter(PullRequest.session_id.in_(FAKE_SESSION_IDS)).delete(synchronize_session=False)
+        db.query(SessionModel).filter(SessionModel.id.in_(FAKE_SESSION_IDS)).delete(synchronize_session=False)
         db.commit()
 
         now = datetime.utcnow()
@@ -89,9 +94,18 @@ def seed():
             db.add(sess)
 
         db.commit()
+
+        # Seed policy rules & audit log decisions
+        seed_default_rules(db)
+
         print(f"Seeded {len(sessions_data)} fake sessions (idempotent).")
         for s in sessions_data:
             print(f"  - {s['id'][:8]} state={s['activity_state'].value} updated={s['updated_at'].isoformat()}")
+
+        # Recompute urgency for seeded sessions
+        for sid in FAKE_SESSION_IDS:
+            asyncio.run(_recompute_and_upsert(sid))
+
     finally:
         db.close()
 

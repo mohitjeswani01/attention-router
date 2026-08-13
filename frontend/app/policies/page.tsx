@@ -85,7 +85,7 @@ export default function PoliciesPage() {
   const escalateCount = decisions.filter((d) => d.decision === "escalate").length;
 
   return (
-    <div className="flex-1 flex min-h-0 p-6 max-w-[1600px] mx-auto w-full">
+    <div className="flex-1 flex flex-col min-h-0 p-6 max-w-[1600px] mx-auto w-full">
       {/* ── Header with summary stats ───────────────────────────── */}
       <div className="mb-6 animate-fade-in-up">
         <div className="flex items-baseline justify-between gap-4 flex-wrap">
