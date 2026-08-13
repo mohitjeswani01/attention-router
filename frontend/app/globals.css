@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ───────────────────────────────────────────── */
+
+:root {
+  --background: #0a0a0b;
+  --foreground: #e5e5e5;
+  --surface: #111113;
+  --border: rgba(255, 255, 255, 0.06);
+  --accent-pink: #ec4899;
+  --accent-cyan: #06b6d4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* ── Typography ─────────────────────────────────────── */
+
+.font-serif {
+  font-family: var(--font-serif), Georgia, 'Times New Roman', serif;
+}
+
+.font-mono {
+  font-family: var(--font-mono), 'SF Mono', 'Fira Code', Consolas, monospace;
+}
+
+/* ── Scrollbar ──────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ── Gradient CTA ───────────────────────────────────── */
+
+.btn-gradient {
+  @apply relative inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white rounded-lg overflow-hidden transition-all duration-200;
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-cyan));
+}
+
+.btn-gradient:hover {
+  box-shadow: 0 0 20px rgba(236, 72, 153, 0.3), 0 0 20px rgba(6, 182, 212, 0.2);
+  transform: translateY(-1px);
+}
+
+.btn-gradient:active {
+  transform: translateY(0);
+}
+
+/* ── Evidence citation tag ──────────────────────────── */
+
+.citation-tag {
+  @apply inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-mono font-medium bg-white/[0.06] text-white/40 ring-1 ring-inset ring-white/[0.08] ml-1 align-super leading-none;
+}
+
+/* ── Loading skeleton pulse ─────────────────────────── */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+/* ── Urgency score ring ─────────────────────────────── */
+
+.urgency-ring {
+  --pct: 0;
+  background: conic-gradient(
+    var(--accent-pink) calc(var(--pct) * 1%),
+    rgba(255, 255, 255, 0.06) calc(var(--pct) * 1%)
+  );
+}
+
+/* ── Smooth enter animations ────────────────────────── */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out both;
+}
+
+.animate-fade-in-up-delay-1 {
+  animation: fadeInUp 0.3s ease-out 0.05s both;
+}
+
+.animate-fade-in-up-delay-2 {
+  animation: fadeInUp 0.3s ease-out 0.1s both;
+}
+
+.animate-fade-in-up-delay-3 {
+  animation: fadeInUp 0.3s ease-out 0.15s both;
+}
